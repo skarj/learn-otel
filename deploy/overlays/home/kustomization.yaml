@@ -13,6 +13,7 @@ resources:
   - ../../base/delivery-service
   - ../../base/notification-service
   - ../../base/load-generator
+  - ../../image-updater/image-updater.yaml
 images:
   - name: ghcr.io/skarj/frontend-gateway
     newTag: latest
