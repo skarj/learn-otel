@@ -3,8 +3,6 @@ kind: ImageUpdater
 metadata:
   name: learn-otel
   namespace: argocd # Must the same namespace as ArgoCD
-  annotations:
-      argocd.argoproj.io/sync-option: PreserveResourcesNamespaces=true
 spec:
   writeBackConfig:
     # References secret: git:secret:<namespace>/<secret-name>
