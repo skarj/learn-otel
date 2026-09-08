@@ -139,7 +139,7 @@ shape but exporting to the gateway instead of directly to SigNoz.
 
 ## Step 3 — Instrument `order-service` traces first
 
-Add a shared bootstrap to `libs/common/otel_common/otel.py` (new file):
+Add a shared bootstrap to `libs/common/app_common/otel.py` (new file):
 
 ```python
 from opentelemetry import trace
@@ -324,7 +324,7 @@ notifications — is fully traced end to end.
 
 ## Step 7 — Add metrics
 
-Same `Resource` as tracing. Add to `otel_common/otel.py`:
+Same `Resource` as tracing. Add to `app_common/otel.py`:
 
 ```python
 from opentelemetry import metrics
@@ -379,7 +379,7 @@ manual injection needed, which is why this comes last: there'd be nothing to cor
 until traces existed.
 
 **Checkpoint**: open a trace in SigNoz, check its "Logs" tab — the log lines your handlers
-already emit (via `configure_logging` in `otel_common/logging.py`) show up correlated to that
+already emit (via `configure_logging` in `app_common/logging.py`) show up correlated to that
 exact request/span.
 
 ---

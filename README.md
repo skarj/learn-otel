@@ -15,7 +15,7 @@ standing up a SigNoz + OTel Collector pipeline to receive it.
 
 - `services/<name>/` — one FastAPI (or, for `load-generator`, a plain asyncio loop) service each,
   managed with `uv`.
-- `libs/common/` — shared `otel_common` package: settings base class, logging, HTTP client,
+- `libs/common/` — shared `app_common` package: settings base class, logging, HTTP client,
   NATS JetStream helpers, domain models. Depended on by every service via a uv workspace path
   dependency.
 - `deploy/base/<name>/` — a Kustomize base per component (each service + Postgres/Redis/NATS).
