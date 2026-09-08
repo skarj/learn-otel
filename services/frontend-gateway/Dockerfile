@@ -14,7 +14,7 @@ COPY --from=builder /app/.venv /app/.venv
 COPY --from=builder /app/libs/common ./libs/common
 COPY --from=builder /app/services/frontend-gateway/frontend_gateway ./frontend_gateway
 ENV PATH="/app/.venv/bin:$PATH"
-ENV PYTHONPATH="/app/libs/common:$PYTHONPATH"
+ENV PYTHONPATH="/app/libs/common"
 USER appuser
 EXPOSE 8000
 CMD ["uvicorn", "frontend_gateway.main:app", "--host", "0.0.0.0", "--port", "8000"]

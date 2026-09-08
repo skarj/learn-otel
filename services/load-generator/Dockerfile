@@ -14,6 +14,6 @@ COPY --from=builder /app/.venv /app/.venv
 COPY --from=builder /app/libs/common ./libs/common
 COPY --from=builder /app/services/load-generator/load_generator ./load_generator
 ENV PATH="/app/.venv/bin:$PATH"
-ENV PYTHONPATH="/app/libs/common:$PYTHONPATH"
+ENV PYTHONPATH="/app/libs/common"
 USER appuser
 CMD ["python", "-m", "load_generator.main"]
