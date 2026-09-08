@@ -71,6 +71,6 @@ async def create_order(payload: OrderCreateRequest):
 async def get_order(order_id: str):
     resp = await app.state.order_http.get(f"/orders/{order_id}")
     if resp.status_code == 404:
-        raise HTTPException(status_code=404, detail="order not found")
+        raise HTTPException(status_code=404, detail="Order not found")
     resp.raise_for_status()
     return resp.json()
