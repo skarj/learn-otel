@@ -11,7 +11,9 @@ FROM python:3.12-slim
 RUN useradd -u 1000 -m appuser
 WORKDIR /app
 COPY --from=builder /app/.venv /app/.venv
+COPY --from=builder /app/libs/common ./libs/common
 COPY --from=builder /app/services/load-generator/load_generator ./load_generator
 ENV PATH="/app/.venv/bin:$PATH"
+ENV PYTHONPATH="/app/libs/common:$PYTHONPATH"
 USER appuser
 CMD ["python", "-m", "load_generator.main"]
