@@ -1,0 +1,57 @@
+apiVersion: argocd-image-updater.argoproj.io/v1alpha1
+kind: ImageUpdater
+metadata:
+  name: learn-otel
+  namespace: argocd # Must the same namespace as ArgoCD
+spec:
+  writeBackConfig:
+    # References secret: git:secret:<namespace>/<secret-name>
+    method: "git:secret:argocd/github-write-creds"
+    gitConfig:
+      branch: "main"
+      writeBackTarget: "kustomization:."
+      user: "argocd-image-updater[bot]"
+      email: "argocd-bot@users.noreply.github.com"
+  applicationRefs:
+    - namePattern: "learn-otel"
+      images:
+        - alias: frontend-gateway
+          imageName: "ghcr.io/skarj/frontend-gateway"
+          commonUpdateSettings:
+            updateStrategy: "latest"
+            allowedTags: "^sha-[a-f0-9]{7}$"
+        - alias: catalog-service
+          imageName: "ghcr.io/skarj/catalog-service"
+          commonUpdateSettings:
+            updateStrategy: "latest"
+            allowedTags: "^sha-[a-f0-9]{7}$"
+        - alias: order-service
+          imageName: "ghcr.io/skarj/order-service"
+          commonUpdateSettings:
+            updateStrategy: "latest"
+            allowedTags: "^sha-[a-f0-9]{7}$"
+        - alias: pricing-service
+          imageName: "ghcr.io/skarj/pricing-service"
+          commonUpdateSettings:
+            updateStrategy: "latest"
+            allowedTags: "^sha-[a-f0-9]{7}$"
+        - alias: kitchen-service
+          imageName: "ghcr.io/skarj/kitchen-service"
+          commonUpdateSettings:
+            updateStrategy: "latest"
+            allowedTags: "^sha-[a-f0-9]{7}$"
+        - alias: delivery-service
+          imageName: "ghcr.io/skarj/delivery-service"
+          commonUpdateSettings:
+            updateStrategy: "latest"
+            allowedTags: "^sha-[a-f0-9]{7}$"
+        - alias: notification-service
+          imageName: "ghcr.io/skarj/notification-service"
+          commonUpdateSettings:
+            updateStrategy: "latest"
+            allowedTags: "^sha-[a-f0-9]{7}$"
+        - alias: load-generator
+          imageName: "ghcr.io/skarj/load-generator"
+          commonUpdateSettings:
+            updateStrategy: "latest"
+            allowedTags: "^sha-[a-f0-9]{7}$"
