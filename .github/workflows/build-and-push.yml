@@ -5,14 +5,20 @@ on:
     branches: [main]
   workflow_dispatch: {}
 
+permissions:
+  contents: read # pull the source code
+  packages: write # push the Docker image
+
 env:
   REGISTRY: ghcr.io
 
 jobs:
   detect-changes:
     runs-on: ubuntu-latest
+
     outputs:
       services: ${{ steps.filter.outputs.changes }}
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -53,10 +59,6 @@ jobs:
     if: ${{ needs.detect-changes.outputs.services != '[]' }}
 
     runs-on: ubuntu-latest
-
-    permissions:
-      contents: read
-      packages: write
 
     strategy:
       matrix:
