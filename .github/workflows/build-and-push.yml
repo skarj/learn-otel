@@ -56,21 +56,19 @@ jobs:
   build:
     needs: detect-changes
 
-    if: ${{ needs.detect-changes.outputs.services != '[]' }}
+    # Run if changes are detected OR if triggered manually via workflow_dispatch
+    if: ${{ github.event_name == 'workflow_dispatch' || (needs.detect-changes.outputs.services != '[]' && needs.detect-changes.outputs.services != '') }}
 
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm # Native ARM64 runner (removes QEMU overhead)
 
     strategy:
       matrix:
-        service: ${{ fromJson(needs.detect-changes.outputs.services) }}
+        # Fall back to building all services on manual workflow_dispatch runs
+        service: ${{ github.event_name == 'workflow_dispatch' && fromJson('["frontend-gateway","catalog-service","order-service","pricing-service","kitchen-service","delivery-service","notification-service","load-generator"]') || fromJson(needs.detect-changes.outputs.services) }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      # Required to build for ARM64 on x86 GitHub runners
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@1f40c72289eff860ee54a304f1438e3cff362e0a # v4.3.0
 
       # Enables advanced Docker features, like building for multiple architectures and better caching
       - name: Set up Docker Buildx
@@ -102,5 +100,5 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           # Optimized caching
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
