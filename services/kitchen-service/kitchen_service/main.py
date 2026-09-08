@@ -4,11 +4,11 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from otel_common.http import create_http_client
-from otel_common.logging import configure_logging
-from otel_common.messaging import connect, consume_forever, ensure_stream
-from otel_common.models import OrderCreatedEvent, OrderStatus
-from otel_common.retry import retry_async
+from app_common.http import create_http_client
+from app_common.logging import configure_logging
+from app_common.messaging import connect, consume_forever, ensure_stream
+from app_common.models import OrderCreatedEvent, OrderStatus
+from app_common.retry import retry_async
 
 from kitchen_service.settings import settings
 

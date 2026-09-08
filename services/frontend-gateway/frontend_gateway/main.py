@@ -2,9 +2,9 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
 
-from otel_common.http import create_http_client
-from otel_common.logging import configure_logging
-from otel_common.models import (
+from app_common.http import create_http_client
+from app_common.logging import configure_logging
+from app_common.models import (
     MenuItem,
     OrderCreateInternalRequest,
     OrderCreateRequest,

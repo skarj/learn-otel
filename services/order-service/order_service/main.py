@@ -4,11 +4,11 @@ from uuid import UUID
 import asyncpg
 from fastapi import FastAPI, HTTPException
 
-from otel_common.http import create_http_client
-from otel_common.logging import configure_logging
-from otel_common.messaging import connect, ensure_stream, publish_event
-from otel_common.retry import retry_async
-from otel_common.models import (
+from app_common.http import create_http_client
+from app_common.logging import configure_logging
+from app_common.messaging import connect, ensure_stream, publish_event
+from app_common.retry import retry_async
+from app_common.models import (
     Order,
     OrderCreatedEvent,
     OrderCreateInternalRequest,

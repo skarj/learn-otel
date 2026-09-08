@@ -4,7 +4,7 @@ import random
 
 import httpx
 
-from otel_common.logging import configure_logging
+from app_common.logging import configure_logging
 
 TARGET_URL = os.environ.get("TARGET_URL", "http://frontend-gateway:8000")
 MIN_INTERVAL = float(os.environ.get("MIN_INTERVAL", "2.0"))

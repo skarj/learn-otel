@@ -3,10 +3,10 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from otel_common.logging import configure_logging
-from otel_common.messaging import connect, consume_forever, ensure_stream
-from otel_common.models import OrderCreatedEvent, OrderDeliveredEvent, OrderReadyEvent
-from otel_common.retry import retry_async
+from app_common.logging import configure_logging
+from app_common.messaging import connect, consume_forever, ensure_stream
+from app_common.models import OrderCreatedEvent, OrderDeliveredEvent, OrderReadyEvent
+from app_common.retry import retry_async
 
 from notification_service.settings import settings
 

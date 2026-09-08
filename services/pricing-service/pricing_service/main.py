@@ -3,8 +3,8 @@ import random
 
 from fastapi import FastAPI, HTTPException
 
-from otel_common.logging import configure_logging
-from otel_common.models import PricingRequest, PricingResponse
+from app_common.logging import configure_logging
+from app_common.models import PricingRequest, PricingResponse
 
 from pricing_service.settings import settings
 

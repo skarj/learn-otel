@@ -5,9 +5,9 @@ import asyncpg
 import redis.asyncio as redis_asyncio
 from fastapi import FastAPI, HTTPException
 
-from otel_common.logging import configure_logging
-from otel_common.models import MenuItem
-from otel_common.retry import retry_async
+from app_common.logging import configure_logging
+from app_common.models import MenuItem
+from app_common.retry import retry_async
 
 from catalog_service import db
 from catalog_service.settings import settings

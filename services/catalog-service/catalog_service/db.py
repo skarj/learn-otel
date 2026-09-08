@@ -1,6 +1,6 @@
 import asyncpg
 
-from otel_common.models import MenuItem
+from app_common.models import MenuItem
 
 CREATE_TABLE = """
 CREATE TABLE IF NOT EXISTS menu_items (

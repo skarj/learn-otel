@@ -3,7 +3,7 @@ from uuid import uuid4
 
 import asyncpg
 
-from otel_common.models import Order, OrderItem, OrderStatus
+from app_common.models import Order, OrderItem, OrderStatus
 
 CREATE_TABLE = """
 CREATE TABLE IF NOT EXISTS orders (

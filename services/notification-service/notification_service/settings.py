@@ -1,4 +1,4 @@
-from otel_common.config import BaseServiceSettings
+from app_common.config import BaseServiceSettings
 
 
 class Settings(BaseServiceSettings):
