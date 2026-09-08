@@ -16,7 +16,7 @@ spec:
       containers:
         - name: nats
           image: nats:2.10-alpine
-          args: ["-js", "-sd", "/data"]
+          args: ["-js", "-sd", "/data", "-m", "8222"]
           ports:
             - containerPort: 4222
               name: client
