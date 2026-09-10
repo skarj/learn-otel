@@ -1,11 +1,10 @@
-# learn-otel
+# Learn-OTel
 
 A hands-on OpenTelemetry learning project, in two stages.
 
 **Stage 1** (this repo, deployed): a small pizza-ordering microservice app — 7 Python
 (FastAPI) services plus a load generator, Postgres, Redis, and NATS JetStream for async
-messaging — running on Kubernetes via ArgoCD, with **zero observability**. That's deliberate:
-it's the "before" state for stage 2.
+messaging — running on Kubernetes via ArgoCD, with **zero observability**.
 
 **Stage 2**: [`docs/observability-guide.md`](docs/observability-guide.md) — a step-by-step guide
 to manually instrumenting every service with the OpenTelemetry SDK (traces, metrics, logs) and

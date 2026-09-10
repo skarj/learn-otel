@@ -1,52 +1,28 @@
 # Stage 2: Implementing OpenTelemetry Observability
 
-This is the "before → after" exercise. Stage 1 (everything under `services/` and `deploy/`)
-runs with **zero** observability — no OTel env vars, no SDKs, no exporters anywhere. This guide
-walks through instrumenting it end-to-end, manually (no `opentelemetry-instrument` auto-agent,
-no `opentelemetry-instrumentation-*` auto-instrumentor libraries) — you write every span,
-every metric, every context-propagation call yourself. That's slower than auto-instrumentation,
-but it's the point: auto-instrumentation is exactly this code, written for you, and it stops
-being magic once you've written it once by hand.
+This is the "before → after" exercise.
+
+Stage 1 (everything under `services/` and `deploy/`) runs with **zero** observability — no OTel env vars, no SDKs, no exporters anywhere.
+This guide walks through instrumenting it end-to-end, manually (no `opentelemetry-instrument` auto-agent, no `opentelemetry-instrumentation-*` auto-instrumentor libraries) —
+you write every span, every metric, every context-propagation call yourself. That's slower than auto-instrumentation, but it's the point: auto-instrumentation is exactly this code, written for you, and it stops being magic once you've written it once by hand.
 
 Work through the steps in order. Each has a checkpoint — don't move on until it passes.
 
-**A note on chart versions**: the Helm values below are illustrative of the shape, not
-copy-paste-exact — SigNoz's and the OTel Collector's chart schemas evolve. When you reach a
-step, check the current values against:
-- SigNoz: https://signoz.io/docs/install/kubernetes/ and `helm show values signoz/signoz`
-- Collector: https://github.com/open-telemetry/opentelemetry-helm-charts/tree/main/charts/opentelemetry-collector
-
 ---
 
-## Step 1 — Deploy SigNoz
+## Step 1 — Deploy SigNoz:
 
-New namespace: `observability`. Add `apps/learn-otel-signoz.yaml` to the `Homelab` repo (same
-app-of-apps convention as `freshrss`/`torrserver` — a `valuesObject`-based `Application`), or
-`helm install` by hand first if you'd rather iterate on values before committing them.
-
-Resource reality check: this is a 2-node arm64 Pi cluster with ~16GB RAM total, already running
-your homelab workloads plus stage 1's ~1GB. SigNoz's own docs target production scale (16 vCPU/
-32GB for ClickHouse alone) — nowhere close to what you have. That's fine for a low-traffic
-learning workload, but only if you cap things explicitly instead of trusting chart defaults:
-
-- Single replica everywhere (query-service, frontend, alertmanager, ClickHouse) — turn off any
-  chart-default HA/replica-count>1.
-- ClickHouse hard-capped: ~1Gi request / 3Gi limit, ~500m/1500m CPU. Use `clickhouse-keeper`
-  (embedded) rather than a separate Zookeeper — one less stateful component to run.
-- Short retention: 3 days traces/logs, 7 days metrics. Set this in ClickHouse's TTL config, not
-  left at chart defaults (which usually assume weeks).
-- Storage: use `nfs-client` (the only StorageClass you have) but watch ClickHouse's stability —
-  NFS's fsync characteristics aren't a great match for ClickHouse's write pattern. Acceptable at
-  this data volume; if you see write stalls or corruption, that's the first thing to suspect.
+Add `apps/signoz.yaml` to ArgoCD application repo
 
 ```yaml
-# apps/learn-otel-signoz.yaml (in the Homelab repo)
+# apps/signoz.yaml
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: learn-otel-signoz
+  name: signoz
   namespace: argocd
-  finalizers: ["resources-finalizer.argocd.argoproj.io"]
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
 spec:
   project: default
   destination:
@@ -55,33 +31,71 @@ spec:
   source:
     repoURL: https://charts.signoz.io
     chart: signoz
-    targetRevision: "<check latest>"
+    targetRevision: 0.141.1
     helm:
       valuesObject:
         clickhouse:
           replicaCount: 1
+          zookeeper:
+            replicaCount: 1
+            resources:
+              limits: {}
+              requests:
+                memory: 256Mi
+                cpu: 100m
+            persistence:
+              storageClass: nfs-client
+              size: 5Gi
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: 1500m
+              memory: 3Gi
           persistence:
             storageClass: nfs-client
             size: 5Gi
+        signoz:
+          replicaCount: 1
           resources:
-            requests: { cpu: 500m, memory: 1Gi }
-            limits: { cpu: "1500m", memory: 3Gi }
-        queryService:
-          replicaCount: 1
-        frontend:
-          replicaCount: 1
-        alertmanager:
-          replicaCount: 1
+            requests:
+              cpu: 100m
+              memory: 100Mi
+            limits:
+              cpu: 750m
+              memory: 1000Mi
+          persistence:
+            storageClass: nfs-client
+            size: 1Gi
+        otelCollector:
+          resources:
+            requests:
+              cpu: 100m
+              memory: 200Mi
+            limits:
+              cpu: "1"
+              memory: 2Gi
   syncPolicy:
-    automated: { prune: true, selfHeal: true }
-    syncOptions: ["CreateNamespace=true"]
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
 ```
 
-Expose the UI the same way `frontend-gateway` is exposed — an `HTTPRoute` at `signoz.cluster.home`
-against the `cilium` Gateway.
+Helm chart will install these components:
+- Signoz Statefullset
+- Clickhouse Operator > Clickhouse Cluster Statefullset
+- Zookeeper Statefullset
+- OTel collector
 
-**Checkpoint**: `kubectl get pods -n observability` all Running, `https://signoz.cluster.home`
-loads the UI, no data yet (nothing's sending telemetry).
+Next we should expose the signoz UI using `HTTPRoute` at `signoz.cluster.home`
+Note: As of today, Signoz official Helm Chart doesn't support `HTTPRoute`, so it should be added separately
+
+**Checkpoint**: `kubectl get pods -n observability` all Running, `https://signoz.cluster.home` loads the UI, no data yet (nothing's sending telemetry).
+
+TODO: understand retention policies
 
 ---
 
