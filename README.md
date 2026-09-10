@@ -10,6 +10,37 @@ messaging — running on Kubernetes via ArgoCD, with **zero observability**.
 to manually instrumenting every service with the OpenTelemetry SDK (traces, metrics, logs) and
 standing up a SigNoz + OTel Collector pipeline to receive it.
 
+## Architecture
+
+```mermaid
+flowchart LR
+    LG[load-generator] -->|HTTP| FG[frontend-gateway]
+
+    FG -->|GET /menu| CAT[catalog-service]
+    FG -->|POST /orders| ORD[order-service]
+
+    CAT --> PG[(Postgres: catalog)]
+    CAT --> RDS[(Redis)]
+
+    ORD -->|POST /calculate| PRC[pricing-service]
+    ORD --> PGO[(Postgres: orders)]
+
+    ORD -.->|order.created| NATS{{NATS JetStream}}
+    NATS -.->|order.created| KIT[kitchen-service]
+    NATS -.->|order.created| NOTIF[notification-service]
+
+    KIT -->|"PATCH status=cooking/ready"| ORD
+    ORD -.->|order.ready| NATS
+    NATS -.->|order.ready| DEL[delivery-service]
+    NATS -.->|order.ready| NOTIF
+
+    DEL -->|"PATCH status=out_for_delivery/delivered"| ORD
+    ORD -.->|order.delivered| NATS
+    NATS -.->|order.delivered| NOTIF
+```
+
+Solid arrows are synchronous HTTP calls; dashed arrows are async NATS publish/consume.
+
 ## Layout
 
 - `services/<name>/` — one FastAPI (or, for `load-generator`, a plain asyncio loop) service each,

@@ -10,6 +10,12 @@ Work through the steps in order. Each has a checkpoint — don't move on until i
 
 ---
 
+See the [Architecture diagram in the README](../README.md#architecture) for the full stage-1
+service topology (sync HTTP calls vs. async NATS hops) before starting — every span/metric/log
+you add from Step 3 onward corresponds to one of those arrows.
+
+---
+
 ## Step 1 — Deploy SigNoz:
 
 Add `apps/signoz.yaml` to ArgoCD application repo
@@ -101,53 +107,194 @@ TODO: understand retention policies
 
 ## Step 2 — Deploy the OTel Collector tier
 
-Two Collector releases, both via the `open-telemetry/opentelemetry-collector` Helm chart, both
-in `observability`:
+### Why not just point everything at SigNoz's own collector?
 
-1. **Gateway** (`mode: deployment`, 1 replica): receives OTLP from the agent tier, batches, and
-   forwards to SigNoz's OTLP ingest endpoint. Build and verify this one first, in isolation.
-2. **Agent** (`mode: daemonset`): runs on every node, receives OTLP from local pods (via each
-   pod's `HOST_IP` or a `hostPort`), forwards to the gateway Service. Deploy only after the
-   gateway is verified working.
+You already have one: `signoz-otel-collector`, running in `observability` as part of the SigNoz
+chart. It *is* a real OpenTelemetry Collector — SigNoz doesn't fork or replace the project, they
+ship one pre-configured with SigNoz-specific exporters that know how to write into their
+ClickHouse schema (traces, logs, metrics tables, span-to-metrics processing). Its job is narrow
+and fixed: be the ingestion front door for SigNoz specifically.
 
-```yaml
-# gateway collector values sketch
-mode: deployment
-replicaCount: 1
-resources:
-  requests: { cpu: 100m, memory: 128Mi }
-  limits: { cpu: 500m, memory: 256Mi }
-config:
-  receivers:
-    otlp:
-      protocols: { grpc: {}, http: {} }
-  processors:
-    batch: {}
-  exporters:
-    otlp:
-      endpoint: signoz-otel-collector.observability.svc.cluster.local:4317
-      tls: { insecure: true }
-  service:
-    pipelines:
-      traces: { receivers: [otlp], processors: [batch], exporters: [otlp] }
-      metrics: { receivers: [otlp], processors: [batch], exporters: [otlp] }
-      logs: { receivers: [otlp], processors: [batch], exporters: [otlp] }
+We're deploying two more Collectors ourselves — same binary, generic config, no backend opinion —
+because in a real deployment applications almost never talk directly to your backend's ingestion
+endpoint. They talk to *your own* Collector, which forwards wherever you point it. That's what
+turns swapping backends, adding a second destination, sampling, filtering, or enriching with k8s
+metadata into a Collector-config change instead of an application code change. Concretely:
+
+- **Agent** (`mode: daemonset`, one pod per node): the thing every application pod on that node
+  talks to. Local, fast, no cross-node hop, no coupling to SigNoz's address.
+- **Gateway** (`mode: deployment`, centralized): where you'd put batching, retries, routing,
+  fan-out to multiple backends. Right now it does one simple thing — forward to SigNoz — but the
+  point is that it's a single place to change that later.
+
+This agent → gateway → backend shape is OpenTelemetry's own standard reference architecture, not
+something specific to this project.
+
+```mermaid
+flowchart LR
+    subgraph Node["any k8s node"]
+        APP["app pod"] -->|"OTLP :4317 via $(HOST_IP)"| AGENT["otel-collector-agent\n(DaemonSet, hostPort 4317)"]
+    end
+    AGENT -->|"OTLP :4317"| GW["otel-collector-gateway\n(Deployment)"]
+    GW -->|"OTLP :4317"| SC["signoz-otel-collector\n(SigNoz's own Collector)"]
+    SC --> CH[(ClickHouse)]
+    CH --> UI[SigNoz UI]
 ```
 
-(SigNoz ships its own Collector as part of the chart, listening on `4317`/`4318` inside the
-`signoz-otel-collector` Service — check the actual Service name from `kubectl get svc -n
-observability` once Step 1 is deployed, chart versions rename this occasionally.)
+Deploy the gateway first and verify it in isolation before the agent — it's the simpler of the two
+to reason about on its own.
 
-Verify the gateway in isolation before touching any app code: `kubectl run` a throwaway pod with
-`curl`/`grpcurl`, or use the [otel-cli](https://github.com/equinix-labs/otel-cli) project to fire
-one manual span at the gateway's Service and confirm it shows up in SigNoz.
+### Gateway
 
-Then deploy the agent DaemonSet, pointed at the gateway Service (`otlp.observability.svc.cluster.local:4317`
-or similar — name it per your Helm release), with `mode: daemonset` and the same receiver/exporter
-shape but exporting to the gateway instead of directly to SigNoz.
+`apps/otel-collector-gateway.yaml` in Homelab, same flat style as `apps/signoz.yaml`:
 
-**Checkpoint**: a manually-fired test span reaches SigNoz via agent → gateway → SigNoz collector
-→ ClickHouse, visible in the SigNoz UI's trace explorer.
+```yaml
+# apps/otel-collector-gateway.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: otel-collector-gateway
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: observability
+  source:
+    repoURL: https://open-telemetry.github.io/opentelemetry-helm-charts
+    chart: opentelemetry-collector
+    targetRevision: 0.172.1
+    helm:
+      valuesObject:
+        mode: deployment
+        replicaCount: 1
+        fullnameOverride: otel-collector-gateway
+        resources:
+          requests: { cpu: 100m, memory: 128Mi }
+          limits: { cpu: 500m, memory: 256Mi }
+        config:
+          exporters:
+            otlp:
+              endpoint: signoz-otel-collector.observability.svc.cluster.local:4317
+              tls:
+                insecure: true
+          service:
+            pipelines:
+              traces:
+                exporters: [otlp]
+              metrics:
+                exporters: [otlp]
+              logs:
+                exporters: [otlp]
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+```
+
+That's the whole override — the chart's own defaults already ship a full `otlp` receiver →
+`memory_limiter, batch` → `<exporter>` pipeline for all three signals; we're only replacing the
+default `debug` exporter with `otlp`, and only under `exporters:` (Helm's map-level merge means
+`receivers`/`processors` are left exactly as the chart defaults them, untouched). With
+`fullnameOverride` set, the resulting Service name is deterministic, not a guess:
+`otel-collector-gateway.observability.svc.cluster.local:4317`.
+
+**Verify the gateway in isolation** before touching the agent or any app code: run a throwaway
+pod with `grpcurl`/`curl`, or use [otel-cli](https://github.com/equinix-labs/otel-cli), to fire
+one manual span at `otel-collector-gateway.observability.svc.cluster.local:4317` and confirm it
+shows up in the SigNoz UI's trace explorer. If it doesn't, debug this hop before adding the agent
+— keep exactly one new variable at a time.
+
+### Agent
+
+`apps/otel-collector-agent.yaml`, same chart:
+
+```yaml
+# apps/otel-collector-agent.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: otel-collector-agent
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: observability
+  source:
+    repoURL: https://open-telemetry.github.io/opentelemetry-helm-charts
+    chart: opentelemetry-collector
+    targetRevision: 0.172.1
+    helm:
+      valuesObject:
+        mode: daemonset
+        fullnameOverride: otel-collector-agent
+        resources:
+          requests: { cpu: 50m, memory: 64Mi }
+          limits: { cpu: 200m, memory: 128Mi }
+        config:
+          exporters:
+            otlp:
+              endpoint: otel-collector-gateway.observability.svc.cluster.local:4317
+              tls:
+                insecure: true
+          service:
+            pipelines:
+              traces:
+                exporters: [otlp]
+              metrics:
+                exporters: [otlp]
+              logs:
+                exporters: [otlp]
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+```
+
+No `ports:` override needed — the chart's defaults already set `hostPort: 4317`/`4318` on the
+OTLP receiver ports, and that takes effect automatically the moment `mode: daemonset` is set. Each
+node now has an agent pod listening on its own host IP, port 4317.
+
+### How application pods actually reach the agent
+
+This is the piece the earlier version of this guide skipped: a pod doesn't know its node's IP by
+default, so use the Kubernetes Downward API to inject it, then build the OTLP endpoint from it.
+Add to **every** stage-1 service's `deploy/base/<service>/deployment.yaml`, in the container's
+`env:` block:
+
+```yaml
+- name: HOST_IP
+  valueFrom:
+    fieldRef:
+      fieldPath: status.hostIP
+- name: OTLP_ENDPOINT
+  value: "http://$(HOST_IP):4317"
+```
+
+And add the matching field to each service's `Settings` class:
+
+```python
+class Settings(BaseServiceSettings):
+    ...
+    otlp_endpoint: str
+```
+
+This is what `settings.otlp_endpoint` in Step 3 below reads from — every app pod ends up pointed
+at the agent running on its *own* node, never at the gateway or SigNoz directly.
+
+**Checkpoint**: a manually-fired test span (from the gateway verification above) reaches SigNoz
+via agent → gateway → `signoz-otel-collector` → ClickHouse, visible in the SigNoz UI's trace
+explorer. Confirm `deploy/base/order-service/deployment.yaml` has `HOST_IP`/`OTLP_ENDPOINT` wired
+before moving on to Step 3.
 
 ---
 
