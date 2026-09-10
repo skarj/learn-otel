@@ -15,18 +15,18 @@ resources:
   - ../../base/image-updater
 images:
   - name: ghcr.io/skarj/frontend-gateway
-    newTag: sha-b77cfcb
+    newTag: sha-6c852a6
   - name: ghcr.io/skarj/catalog-service
-    newTag: sha-b77cfcb
+    newTag: sha-6c852a6
   - name: ghcr.io/skarj/order-service
-    newTag: sha-b77cfcb
+    newTag: sha-6c852a6
   - name: ghcr.io/skarj/pricing-service
-    newTag: sha-b77cfcb
+    newTag: sha-6c852a6
   - name: ghcr.io/skarj/kitchen-service
-    newTag: sha-b77cfcb
+    newTag: sha-6c852a6
   - name: ghcr.io/skarj/delivery-service
-    newTag: sha-b77cfcb
+    newTag: sha-6c852a6
   - name: ghcr.io/skarj/notification-service
-    newTag: sha-b77cfcb
+    newTag: sha-6c852a6
   - name: ghcr.io/skarj/load-generator
-    newTag: sha-b77cfcb
+    newTag: sha-6c852a6
