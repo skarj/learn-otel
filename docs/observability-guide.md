@@ -1,24 +1,19 @@
-# Stage 2: Implementing OpenTelemetry Observability
+# Implementing OpenTelemetry Observability
 
 This is the "before → after" exercise.
 
-Stage 1 (everything under `services/` and `deploy/`) runs with **zero** observability — no OTel env vars, no SDKs, no exporters anywhere.
-This guide walks through instrumenting it end-to-end, manually (no `opentelemetry-instrument` auto-agent, no `opentelemetry-instrumentation-*` auto-instrumentor libraries) —
-you write every span, every metric, every context-propagation call yourself. That's slower than auto-instrumentation, but it's the point: auto-instrumentation is exactly this code, written for you, and it stops being magic once you've written it once by hand.
+Stage 1 runs with **zero** observability — no OTel env vars, no SDKs, no exporters anywhere. This guide walks through instrumenting it end-to-end, manually (no `opentelemetry-instrument` auto-agent, no `opentelemetry-instrumentation-*` auto-instrumentor libraries) — you write every span, every metric, every context-propagation call yourself. That's slower than auto-instrumentation, but it's the point: auto-instrumentation is exactly this code, written for you, and it stops being magic once you've written it once by hand.
 
 Work through the steps in order. Each has a checkpoint — don't move on until it passes.
-
----
-
-See the [Architecture diagram in the README](../README.md#architecture) for the full stage-1
-service topology (sync HTTP calls vs. async NATS hops) before starting — every span/metric/log
-you add from Step 3 onward corresponds to one of those arrows.
-
 ---
 
 ## Step 1 — Deploy SigNoz:
 
-1. Add `apps/signoz.yaml` to ArgoCD application repo
+1. Add `apps/signoz.yaml` to ArgoCD application repo. It uses official Signoz Helm chart. It will install the next components:
+  - Signoz Statefullset
+  - Clickhouse Operator > Clickhouse Cluster Statefullset
+  - Zookeeper Statefullset
+  - OTel Collector
 
 ```yaml
 # apps/signoz.yaml
@@ -90,16 +85,10 @@ spec:
       - CreateNamespace=true
 ```
 
-2. Helm chart will install the next components:
-- Signoz Statefullset
-- Clickhouse Operator > Clickhouse Cluster Statefullset
-- Zookeeper Statefullset
-- OTel Collector
-
-3. Next we should expose the signoz UI using `HTTPRoute` at `signoz.cluster.home`
+2. Next we should expose the signoz UI using `HTTPRoute` at `signoz.cluster.home`
 Note: As of today, Signoz official Helm Chart doesn't support `HTTPRoute`, so it should be added separately
 
-4. **Checkpoint**: `kubectl get pods -n observability` all Running, `https://signoz.cluster.home` loads the UI, no data yet (nothing's sending telemetry).
+3. **Checkpoint**: `kubectl get pods -n observability` all Running, `https://signoz.cluster.home` loads the UI, no data yet (nothing's sending telemetry).
 
 ---
 
@@ -190,9 +179,22 @@ kubectl run otel-test --rm -it --restart=Never \
 
 ---
 
-## Step 3 — Instrument `order-service` traces first
+## Step 3 — Instrument `order-service` traces
 
-Add a shared bootstrap to `libs/common/app_common/otel.py` (new file):
+1. Add the new dependencies this step needs to **`libs/common/pyproject.toml`**.
+Easiest way is to use via `uv add` from `libs/common/`
+
+```bash
+uv add opentelemetry-sdk opentelemetry-exporter-otlp-proto-grpc
+```
+
+It resolves a sensible version bound itself and updates `uv.lock` as part of adding it. That lock update isn't
+optional: every `Dockerfile` here runs `uv sync --frozen`, which refuses to deviate from
+`uv.lock` — add a dependency without regenerating it and the next `docker build` (or CI run)
+fails immediately with a lock-mismatch error. If you hand-edit `pyproject.toml` instead of using
+`uv add`, run `uv lock` from the repo root afterward.
+
+2. Add a shared bootstrap to `libs/common/app_common/otel.py` (new file):
 
 ```python
 from opentelemetry import trace
