@@ -9,3 +9,4 @@ class BaseServiceSettings(BaseSettings):
     service_name: str
     port: int = 8000
     log_level: str = "INFO"
+    otlp_endpoint: str

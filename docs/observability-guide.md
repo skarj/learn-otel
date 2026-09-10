@@ -55,10 +55,10 @@ spec:
           resources:
             requests:
               cpu: 500m
-              memory: 1Gi
+              memory: 1.5Gi
             limits:
               cpu: 1500m
-              memory: 3Gi
+              memory: 4Gi
           persistence:
             storageClass: nfs-client
             size: 5Gi
@@ -90,22 +90,20 @@ spec:
       - CreateNamespace=true
 ```
 
-2. Helm chart will install these components:
+2. Helm chart will install the next components:
 - Signoz Statefullset
 - Clickhouse Operator > Clickhouse Cluster Statefullset
 - Zookeeper Statefullset
-- OTel collector
+- OTel Collector
 
 3. Next we should expose the signoz UI using `HTTPRoute` at `signoz.cluster.home`
 Note: As of today, Signoz official Helm Chart doesn't support `HTTPRoute`, so it should be added separately
 
 4. **Checkpoint**: `kubectl get pods -n observability` all Running, `https://signoz.cluster.home` loads the UI, no data yet (nothing's sending telemetry).
 
-TODO: understand retention policies
-
 ---
 
-## Step 2 — Point apps directly at SigNoz's Collector
+## Step 2 — Point apps at SigNoz's Collector
 
 ### Where's the Collector tier?
 
@@ -154,20 +152,38 @@ code of ours running in them. Their side of every call still ends up traced, jus
 *calling* service's manual CLIENT span (Step 3), not from anything configured on the
 database/cache/broker pods themselves.
 
-2. Add the matching field to each service's `Settings` class:
-
-```python
-class Settings(BaseServiceSettings):
-    ...
-    otlp_endpoint: str
-```
-
+2. Add `otlp_endpoint: str` to `BaseServiceSettings` itself, in `libs/common/app_common/config.py`.
 This is what `settings.otlp_endpoint` in Step 3 below reads from.
 
 3. **Verify before touching any app code**: fire one manual span at
-`signoz-otel-collector.observability.svc.cluster.local:4317` from any pod in the cluster (a
-throwaway pod, `grpcurl`, or [otel-cli](https://github.com/equinix-labs/otel-cli)) and confirm it
-shows up in the SigNoz UI's trace explorer.
+`signoz-otel-collector.observability.svc.cluster.local:4317` confirm it shows up in the SigNoz UI's trace explorer.
+
+```bash
+kubectl run otel-test --rm -it --restart=Never \
+  --image=curlimages/curl:latest \
+  --namespace=observability \
+  -- sh -c '
+    NOW=$(date +%s)
+    curl -s -X POST "http://signoz-otel-collector.observability.svc.cluster.local:4318/v1/traces" \
+      -H "Content-Type: application/json" \
+      -d "{
+        \"resourceSpans\": [{
+          \"resource\": {\"attributes\": [{\"key\": \"service.name\", \"value\": {\"stringValue\": \"manual-test\"}}]},
+          \"scopeSpans\": [{
+            \"scope\": {\"name\": \"manual-test\"},
+            \"spans\": [{
+              \"traceId\": \"0123456789abcdef0123456789abcdef\",
+              \"spanId\": \"0123456789abcdef\",
+              \"name\": \"manual-test-span\",
+              \"kind\": 1,
+              \"startTimeUnixNano\": \"${NOW}000000000\",
+              \"endTimeUnixNano\": \"${NOW}100000000\"
+            }]
+          }]
+        }]
+      }"
+  '
+```
 
 **Checkpoint**: the manual test span is visible in SigNoz. Confirm
 `deploy/base/order-service/deployment.yaml` has `OTLP_ENDPOINT` wired before moving on to Step 3.
