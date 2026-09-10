@@ -38,6 +38,8 @@ spec:
                   key: password
             - name: POSTGRES_DSN
               value: "postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres:5432/orders"
+            - name: OTLP_ENDPOINT
+              value: "http://signoz-otel-collector.observability.svc.cluster.local:4317"
           resources:
             requests:
               cpu: 50m

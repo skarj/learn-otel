@@ -22,6 +22,8 @@ spec:
           env:
             - name: SERVICE_NAME
               value: pricing-service
+            - name: OTLP_ENDPOINT
+              value: "http://signoz-otel-collector.observability.svc.cluster.local:4317"
           resources:
             requests:
               cpu: 50m

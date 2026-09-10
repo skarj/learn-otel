@@ -26,6 +26,8 @@ spec:
               value: "3.5"
             - name: BURST_PROBABILITY
               value: "0.02"
+            - name: OTLP_ENDPOINT
+              value: "http://signoz-otel-collector.observability.svc.cluster.local:4317"
           resources:
             requests:
               cpu: 25m

@@ -139,15 +139,20 @@ flowchart LR
 
 ### Wire it up
 
-1. Add to **every** stage-1 service's `deploy/base/<service>/deployment.yaml`, in the container's
-`env:` block:
+1. Add to each of the **8 application components** only — `frontend-gateway`, `catalog-service`,
+`order-service`, `pricing-service`, `kitchen-service`, `delivery-service`, `notification-service`,
+`load-generator` — in `deploy/base/<service>/deployment.yaml`'s container `env:` block:
 
 ```yaml
 - name: OTLP_ENDPOINT
   value: "http://signoz-otel-collector.observability.svc.cluster.local:4317"
 ```
 
-Same literal value everywhere — no Downward API needed since there's no per-node component to find.
+Same literal value everywhere — no Downward API needed since there's no per-node component to
+find. **Not** Postgres, Redis, or NATS — those are off-the-shelf images with no OTel SDK and no
+code of ours running in them. Their side of every call still ends up traced, just from the
+*calling* service's manual CLIENT span (Step 3), not from anything configured on the
+database/cache/broker pods themselves.
 
 2. Add the matching field to each service's `Settings` class:
 
@@ -159,7 +164,7 @@ class Settings(BaseServiceSettings):
 
 This is what `settings.otlp_endpoint` in Step 3 below reads from.
 
-**Verify before touching any app code**: fire one manual span at
+3. **Verify before touching any app code**: fire one manual span at
 `signoz-otel-collector.observability.svc.cluster.local:4317` from any pod in the cluster (a
 throwaway pod, `grpcurl`, or [otel-cli](https://github.com/equinix-labs/otel-cli)) and confirm it
 shows up in the SigNoz UI's trace explorer.

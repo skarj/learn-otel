@@ -24,6 +24,8 @@ spec:
               value: notification-service
             - name: NATS_URL
               value: nats://nats:4222
+            - name: OTLP_ENDPOINT
+              value: "http://signoz-otel-collector.observability.svc.cluster.local:4317"
           resources:
             requests:
               cpu: 50m
