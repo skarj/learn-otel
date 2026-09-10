@@ -10,10 +10,11 @@ Work through the steps in order. Each has a checkpoint — don't move on until i
 ## Step 1 — Deploy SigNoz:
 
 1. Add `apps/signoz.yaml` to ArgoCD application repo. It uses official Signoz Helm chart. It will install the next components:
-  - Signoz Statefullset
-  - Clickhouse Operator > Clickhouse Cluster Statefullset
-  - Zookeeper Statefullset
-  - OTel Collector
+
+- Signoz Statefullset
+- Clickhouse Operator > Clickhouse Cluster Statefullset
+- Zookeeper Statefullset
+- OTel Collector
 
 ```yaml
 # apps/signoz.yaml
@@ -194,7 +195,8 @@ optional: every `Dockerfile` here runs `uv sync --frozen`, which refuses to devi
 fails immediately with a lock-mismatch error. If you hand-edit `pyproject.toml` instead of using
 `uv add`, run `uv lock` from the repo root afterward.
 
-2. Add a shared bootstrap to `libs/common/app_common/otel.py` (new file):
+2. Add a shared bootstrap to `libs/common/app_common/otel.py`. Every service calls this once, at
+startup, so it lives in `app_common`.
 
 ```python
 from opentelemetry import trace
@@ -215,7 +217,26 @@ def configure_tracing(service_name: str, otlp_endpoint: str) -> None:
     trace.set_tracer_provider(provider)
 ```
 
-Call `configure_tracing(settings.service_name, settings.otlp_endpoint)` once at process startup
+What each piece actually does:
+
+- **`Resource`**: metadata about *what produced this telemetry* — not the span itself, the
+  process emitting it. `service.name` here is exactly what makes SigNoz's Services list show
+  `order-service`, `catalog-service`, etc. as distinct entries.
+- **`TracerProvider`**: the per-process SDK object that actually holds this configuration (the
+  resource, the exporters). Every span you create later comes from a `Tracer` obtained off this
+  provider — it's the thing everything else attaches to.
+- **`BatchSpanProcessor(OTLPSpanExporter(...))`**: what happens to a span once it finishes.
+  `OTLPSpanExporter` serializes it and ships it over gRPC to `otlp_endpoint`.
+  `BatchSpanProcessor` wraps that so spans get queued and sent in the background in batches,
+  instead of blocking the request on a network call every single time a span ends — same
+  batching concept as the Collector's own `batch` processor from Step 2, just at the SDK level
+  instead of infra level.
+- **`trace.set_tracer_provider(provider)`**: registers this as the *global* provider for the
+  process. This is what makes `trace.get_tracer(__name__)` — called later, anywhere else in the
+  code, with no explicit reference to `provider` — pick up this exact configuration automatically.
+
+
+3. Call `configure_tracing(settings.service_name, settings.otlp_endpoint)` once at process startup
 (top of `app/main.py`, before the FastAPI app object is created), where `otlp_endpoint` is
 `signoz-otel-collector.observability.svc.cluster.local:4317` (see Step 2).
 
