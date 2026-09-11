@@ -9,8 +9,9 @@ Work through the steps in order. Each has a checkpoint — don't move on until i
 
 ## Step 1 — Deploy SigNoz:
 
-1. Add `apps/signoz.yaml` to ArgoCD application repo. It uses official Signoz Helm chart. It will install the next components:
+1. Add `apps/signoz.yaml` to ArgoCD application repo. It uses official Signoz Helm chart.
 
+The chart will install the next components:
 - Signoz Statefullset
 - Clickhouse Operator > Clickhouse Cluster Statefullset
 - Zookeeper Statefullset
@@ -86,8 +87,8 @@ spec:
       - CreateNamespace=true
 ```
 
-2. Next we should expose the signoz UI using `HTTPRoute` at `signoz.cluster.home`
-Note: As of today, Signoz official Helm Chart doesn't support `HTTPRoute`, so it should be added separately
+2. We should expose the signoz UI using `HTTPRoute` at `signoz.cluster.home`
+Note: As of today, Signoz official Helm Chart doesn't support `HTTPRoute`, so it should be added separately.
 
 3. **Checkpoint**: `kubectl get pods -n observability` all Running, `https://signoz.cluster.home` loads the UI, no data yet (nothing's sending telemetry).
 
@@ -97,26 +98,13 @@ Note: As of today, Signoz official Helm Chart doesn't support `HTTPRoute`, so it
 
 ### Where's the Collector tier?
 
-Skipped, deliberately. The standard production pattern is a **local Collector agent** (a
-DaemonSet, one pod per node) sitting in front of whatever Collector(s) come after it, so
-applications never need to know the address of anything downstream — they talk to whatever's
-running locally, which decouples every app from downstream specifics (which collector, how many
-hops, which address) and gives you a place to batch/sample/route before telemetry even leaves the
-node. That's genuinely good practice, and worth knowing about.
+Skipped, deliberately. The standard production pattern is a **local Collector agent** (a DaemonSet, one pod per node) sitting in front of whatever Collector(s) come after it, so applications never need to know the address of anything downstream — they talk to whatever's running locally, which decouples every app from downstream specifics (which collector, how many hops, which address) and gives you a place to batch/sample/route before telemetry even leaves the node. That's genuinely good practice, and worth knowing about.
 
-This is a small lab environment, not production, and the point right now is learning the OTel
-SDK, not operating a Collector fleet. An agent DaemonSet is one more pod per node, one more
-`ArgoCD Application`, one more thing to debug — for zero functional gain until you actually need
-sampling, routing, or multiple destinations. So for this project: every service exports **straight
-to SigNoz's own Collector**, `signoz-otel-collector.observability.svc.cluster.local:4317`.
+This is a small lab environment, not production, and the point right now is learning the OTel SDK, not operating a Collector fleet. An agent DaemonSet is one more pod per node, one more `ArgoCD Application`, one more thing to debug — for zero functional gain until you actually need sampling, routing, or multiple destinations. So for this project: every service exports **straight to SigNoz's own Collector**, `signoz-otel-collector.observability.svc.cluster.local:4317`.
 
-To be precise about what that Collector actually is: `signoz-otel-collector` is *not* the backend
-— it's already a Collector instance itself, pre-configured by the SigNoz chart with exporters that
-know how to write into ClickHouse's schema. ClickHouse is the real backend (the thing that
-actually stores and gets queried).
+To be precise about what that Collector actually is: `signoz-otel-collector` is *not* the backend — it's already a Collector instance itself, pre-configured by the SigNoz chart with exporters that know how to write into ClickHouse's schema. ClickHouse is the real backend (the thing that actually stores and gets queried).
 
-If you later want to practice the local-agent pattern, it's a clean addition — swap one env var
-value for the Downward-API `HOST_IP` trick, deploy the DaemonSet, done.
+If you later want to practice the local-agent pattern, it's a clean addition — swap one env var value for the Downward-API `HOST_IP` trick, deploy the DaemonSet, done.
 
 ```mermaid
 flowchart LR
@@ -127,7 +115,7 @@ flowchart LR
 
 ### Wire it up
 
-1. Add to each of the **8 application components** only — `frontend-gateway`, `catalog-service`,
+1. Add to each of the **8 application components** — `frontend-gateway`, `catalog-service`,
 `order-service`, `pricing-service`, `kitchen-service`, `delivery-service`, `notification-service`,
 `load-generator` — in `deploy/base/<service>/deployment.yaml`'s container `env:` block:
 
@@ -136,17 +124,11 @@ flowchart LR
   value: "http://signoz-otel-collector.observability.svc.cluster.local:4317"
 ```
 
-Same literal value everywhere — no Downward API needed since there's no per-node component to
-find. **Not** Postgres, Redis, or NATS — those are off-the-shelf images with no OTel SDK and no
-code of ours running in them. Their side of every call still ends up traced, just from the
-*calling* service's manual CLIENT span (Step 3), not from anything configured on the
-database/cache/broker pods themselves.
+No Downward API needed since there's no per-node component to find. **Not** Postgres, Redis, or NATS — those are off-the-shelf images with no OTel SDK and no code of ours running in them. Their side of every call still ends up traced, just from the *calling* service's manual CLIENT span (Step 3), not from anything configured on the database/cache/broker pods themselves.
 
-2. Add `otlp_endpoint: str` to `BaseServiceSettings` itself, in `libs/common/app_common/config.py`.
-This is what `settings.otlp_endpoint` in Step 3 below reads from.
+2. Add `otlp_endpoint: str` to `BaseServiceSettings` in `libs/common/app_common/config.py`. This is what `settings.otlp_endpoint` in Step 3 below reads from.
 
-3. **Verify before touching any app code**: fire one manual span at
-`signoz-otel-collector.observability.svc.cluster.local:4317` confirm it shows up in the SigNoz UI's trace explorer.
+3. **Verify before touching any app code**: fire one manual span at `signoz-otel-collector.observability.svc.cluster.local:4317` confirm it shows up in the SigNoz UI's trace explorer.
 
 ```bash
 kubectl run otel-test --rm -it --restart=Never \
@@ -175,28 +157,21 @@ kubectl run otel-test --rm -it --restart=Never \
   '
 ```
 
-**Checkpoint**: the manual test span is visible in SigNoz. Confirm
-`deploy/base/order-service/deployment.yaml` has `OTLP_ENDPOINT` wired before moving on to Step 3.
+**Checkpoint**: the manual test span is visible in SigNoz. Confirm `deploy/base/order-service/deployment.yaml` has `OTLP_ENDPOINT` wired before moving on to Step 3.
 
 ---
 
 ## Step 3 — Instrument `order-service` traces
 
-1. Add the new dependencies this step needs to **`libs/common/pyproject.toml`**.
-Easiest way is to use via `uv add` from `libs/common/`
+1. Add the new dependencies this step needs to **`libs/common/pyproject.toml`**. Easiest way is to use via `uv add` from `libs/common/`
 
 ```bash
 uv add opentelemetry-sdk opentelemetry-exporter-otlp-proto-grpc
 ```
 
-It resolves a sensible version bound itself and updates `uv.lock` as part of adding it. That lock update isn't
-optional: every `Dockerfile` here runs `uv sync --frozen`, which refuses to deviate from
-`uv.lock` — add a dependency without regenerating it and the next `docker build` (or CI run)
-fails immediately with a lock-mismatch error. If you hand-edit `pyproject.toml` instead of using
-`uv add`, run `uv lock` from the repo root afterward.
+It resolves a sensible version bound itself and updates `uv.lock` as part of adding it. That lock update isn't optional: every `Dockerfile` here runs `uv sync --frozen`, which refuses to deviate from `uv.lock` — add a dependency without regenerating it and the next `docker build` (or CI run) fails immediately with a lock-mismatch error. If you hand-edit `pyproject.toml` instead of using `uv add`, run `uv lock` from the repo root afterward.
 
-2. Add a shared bootstrap to `libs/common/app_common/otel.py`. Every service calls this once, at
-startup, so it lives in `app_common`.
+2. Add a shared bootstrap to `libs/common/app_common/otel.py`. Every service calls this once, at startup, so it lives in `app_common`.
 
 ```python
 from opentelemetry import trace
@@ -219,29 +194,15 @@ def configure_tracing(service_name: str, otlp_endpoint: str) -> None:
 
 What each piece actually does:
 
-- **`Resource`**: metadata about *what produced this telemetry* — not the span itself, the
-  process emitting it. `service.name` here is exactly what makes SigNoz's Services list show
-  `order-service`, `catalog-service`, etc. as distinct entries.
-- **`TracerProvider`**: the per-process SDK object that actually holds this configuration (the
-  resource, the exporters). Every span you create later comes from a `Tracer` obtained off this
-  provider — it's the thing everything else attaches to.
-- **`BatchSpanProcessor(OTLPSpanExporter(...))`**: what happens to a span once it finishes.
-  `OTLPSpanExporter` serializes it and ships it over gRPC to `otlp_endpoint`.
-  `BatchSpanProcessor` wraps that so spans get queued and sent in the background in batches,
-  instead of blocking the request on a network call every single time a span ends — same
-  batching concept as the Collector's own `batch` processor from Step 2, just at the SDK level
-  instead of infra level.
-- **`trace.set_tracer_provider(provider)`**: registers this as the *global* provider for the
-  process. This is what makes `trace.get_tracer(__name__)` — called later, anywhere else in the
-  code, with no explicit reference to `provider` — pick up this exact configuration automatically.
+- **`Resource`**: metadata about *what produced this telemetry* — not the span itself, the process emitting it. `service.name` here is exactly what makes SigNoz's Services list show `order-service`, `catalog-service`, etc. as distinct entries.
+- **`TracerProvider`**: the per-process SDK object that actually holds this configuration (the resource, the exporters). Every span you create later comes from a `Tracer` obtained off this provider — it's the thing everything else attaches to.
+- **`BatchSpanProcessor(OTLPSpanExporter(...))`**: what happens to a span once it finishes. `OTLPSpanExporter` serializes it and ships it over gRPC to `otlp_endpoint`. `BatchSpanProcessor` wraps that so spans get queued and sent in the background in batches, instead of blocking the request on a network call every single time a span ends — same batching concept as the Collector's own `batch` processor from Step 2, just at the SDK level instead of infra level.
+- **`trace.set_tracer_provider(provider)`**: registers this as the *global* provider for the process. This is what makes `trace.get_tracer(__name__)` — called later, anywhere else in the code, with no explicit reference to `provider` — pick up this exact configuration automatically.
 
 
-3. Call `configure_tracing(settings.service_name, settings.otlp_endpoint)` once at process startup
-(top of `app/main.py`, before the FastAPI app object is created), where `otlp_endpoint` is
-`signoz-otel-collector.observability.svc.cluster.local:4317` (see Step 2).
+3. Call `configure_tracing(settings.service_name, settings.otlp_endpoint)` once at process startup (top of `app/main.py`, before the FastAPI app object is created), where `otlp_endpoint` is `signoz-otel-collector.observability.svc.cluster.local:4317` (see Step 2).
 
-Since there's no framework auto-instrumentor, write a small ASGI middleware that manually starts
-a SERVER span per request, extracting whatever trace context arrived on the incoming headers:
+Since there's no framework auto-instrumentor, write a small ASGI middleware that manually starts a SERVER span per request, extracting whatever trace context arrived on the incoming headers:
 
 ```python
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -263,11 +224,9 @@ class TracingMiddleware(BaseHTTPMiddleware):
             return response
 ```
 
-`app.add_middleware(TracingMiddleware)`. Writing this by hand is exactly what
-`FastAPIInstrumentor` does for you — now you know how.
+`app.add_middleware(TracingMiddleware)`. Writing this by hand is exactly what `FastAPIInstrumentor` does for you — now you know how.
 
-Wrap the outbound call to `pricing-service` in a manual CLIENT span, injecting the current
-context onto the outgoing headers:
+Wrap the outbound call to `pricing-service` in a manual CLIENT span, injecting the current context onto the outgoing headers:
 
 ```python
 from opentelemetry.propagate import inject
@@ -294,9 +253,7 @@ with tracer.start_as_current_span("INSERT orders", kind=SpanKind.CLIENT) as span
     # ... existing asyncpg call ...
 ```
 
-**Checkpoint**: place an order, see a single `order-service` trace in SigNoz with the request
-span, the pricing-service CLIENT span (not yet connected to anything on the pricing-service
-side — that's Step 4), and the DB span nested underneath it.
+**Checkpoint**: place an order, see a single `order-service` trace in SigNoz with the request span, the pricing-service CLIENT span (not yet connected to anything on the pricing-service side — that's Step 4), and the DB span nested underneath it.
 
 ---
 
